@@ -1,3 +1,5 @@
+program main;
+
 uses BaseUnix, Linux;
 
 Type
@@ -27,6 +29,21 @@ const
   KVM_EXIT_HLT = 5;
   KVM_EXIT_MMIO = 6;
   KVM_EXIT_IO = 2;
+
+  PDE64_PRESENT = 1;
+  PDE64_RW = 1 shl 1;
+  PDE64_USER = 1 shl 2;
+  PDE64_PS = 1 shl 7;
+  CR0_PE = 1;
+  CR0_MP = 1 shl 1;
+  CR0_ET = 1 shl 4;
+  CR0_NE = 1 shl 5;
+  CR0_WP = 1 shl 16;
+  CR0_AM = 1 shl 18;
+  CR0_PG = 1 shl 31;
+  EFER_LME = 1 shl 8;
+  EFER_LMA = 1 shl 10;
+  CR4_PAE = 1 shl 5;
 
 type
   // KVM_EXIT_UNKNOWN
@@ -110,6 +127,7 @@ type
     padding: array[0..2] of WORD;
   end;
 
+  pkvm_sregs = ^kvm_sregs;
   kvm_sregs = record
     cs, ds, es, fs, gs, ss: kvm_segment;
     tr, ldt: kvm_segment;
@@ -130,27 +148,61 @@ type
 
 const
   GUEST_ADDR_START = 0;
-  GUEST_ADDR_MEM_SIZE = $1000;
+  GUEST_ADDR_MEM_SIZE = $200000;
+
+
+procedure setup_longmode(mem: Pointer; sregs: pkvm_sregs);
+var
+  pml4, pdpt, pd: ^QWORD;
+  seg: kvm_segment;
+begin
+  pml4 := Pointer(PtrUInt(mem)+$2000);
+  pdpt := Pointer(PtrUInt(mem)+$3000);
+  pd := Pointer(PtrUInt(mem)+$4000);
+  
+  pml4[0] := PDE64_PRESENT or PDE64_RW or PDE64_USER or $3000;
+  pdpt[0] := PDE64_PRESENT or PDE64_RW or PDE64_USER or $4000;
+  pd[0] := PDE64_PRESENT or PDE64_RW or PDE64_USER or PDE64_PS;
+
+  // this supposes that we start at 0
+  sregs^.cr3 := $2000;
+  sregs^.cr4 := CR4_PAE;
+  sregs^.cr0 := CR0_PE or CR0_MP or CR0_ET or CR0_NE or CR0_WP or CR0_AM or CR0_PG;
+  sregs^.efer := EFER_LME or EFER_LMA;
+
+  seg.base := 0;
+  seg.limit := $ffffffff;
+  seg.selector := 1 shl 3;
+  seg.present := 1;
+  seg.tp := 11;
+  seg.dpl := 0;
+  seg.db := 0;
+  seg.s := 1;
+  seg.l := 1;
+  seg.g := 1;
+
+  sregs^.cs := seg;
+  
+  seg.tp := 3;
+  seg.selector := 2 shl 3;
+  sregs^.ds := seg;
+  sregs^.fs := seg;
+  sregs^.gs := seg;
+  sregs^.ss := seg;
+end;
 
 var
   kvm, vmfd, vcpufd: CInt;
   ret: LongInt;
-  mem: PChar;
+  mem,filemem: PChar;
   region: kvm_userspace_memory_region;
   mmap_size: QWORD;
   run: ^kvm_run;
   sregs: kvm_sregs;
   regs: kvm_regs;
-  code: array[0..11] of Byte = (
-        $ba, $f8, $03, // mov $0x3f8, %dx 
-        $0, $d8,       // add %bl, %al 
-        $04, Byte('0'),      // add $'0', %al 
-        $ee,           // out %al, (%dx) 
-        $b0, Byte('1'),      // mov $'\n', %al
-        $ee,           // out %al, (%dx)
-        $f4           // hlt
-    );
-  p: PChar = @code[0];
+  Buf : Array[1..2048] of byte;
+  Readed: LongInt;
+  FBinary: File;
 
 begin 
   kvm := fpOpen('/dev/kvm', O_RdWr or O_CLOEXEC);
@@ -191,7 +243,18 @@ begin
     fpClose(kvm);
     Exit;
   end;
-  move(p^, mem^, sizeof(code)); 
+  
+  // read binary from file an put it in memory
+  Assign(FBinary, Paramstr(1));
+  Reset(FBinary, 1);
+  filemem := mem;
+  Repeat
+    BlockRead (FBinary, Buf, Sizeof(Buf), Readed);
+    move(Buf, filemem^, Readed); 
+    Inc(filemem, Readed);
+  Until (Readed = 0);
+  Close(FBinary);
+  //move(p^, mem^, sizeof(code)); 
   
   region.slot := 0;
   region.guest_phys_addr := GUEST_ADDR_START;
@@ -237,8 +300,6 @@ begin
     Exit;
   end;
 
-  // TODO: here switch to long mode
-  
   // Initialize CS to point at 0, via a read-modify-write of sregs
   ret := fpIOCtl(vcpufd, KVM_GET_SREGS, @sregs);
   if ret = -1 then
@@ -247,8 +308,10 @@ begin
     fpClose(kvm);
     Exit;
   end;
-  sregs.cs.base := 0;
-  sregs.cs.selector := 0;
+
+  // set lognmode
+  setup_longmode(mem, @sregs);
+  
   ret := fpIOCtl(vcpufd, KVM_SET_SREGS, @sregs);
   if ret = -1 then
   begin
@@ -256,13 +319,15 @@ begin
     fpClose(kvm);
     Exit;
   end;
-  
-  // Initialize registers: instruction pointer for our code, addends, and
-  // initial flags required by x86 architecture
+ 
+  fillChar(pchar(@regs)^, sizeof(regs), 0);
+
   regs.rip := GUEST_ADDR_START;
   regs.rax := 2;
   regs.rbx := 2;
   regs.rflags := 2;
+  regs.rsp := GUEST_ADDR_MEM_SIZE;
+
   ret := fpIOCtl(vcpufd, KVM_SET_REGS, @regs);
   if ret = -1 then
   begin
@@ -283,7 +348,14 @@ begin
     end;
     if run^.exit_reason = KVM_EXIT_HLT then
     begin
-      WriteLn('HLT!');
+      WriteLn('HLT!');  
+      ret := fpIOCtl(vcpufd, KVM_GET_REGS, @regs);
+      if ret = -1 then
+      begin
+        WriteLn('KVM_SET_REGS');
+        Break;
+      end;
+      WriteLn('Halt instruction, rax: ', regs.rax, ', rbx: ', regs.rbx);
       Break;
     end else if run^.exit_reason = KVM_EXIT_MMIO then
     begin
