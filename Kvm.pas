@@ -1,16 +1,37 @@
-Unit Kvm;
-
-
+//
+// This unit contains an API to use KVM API to manipulate VMs.
+//
+// Copyright (c) 2021 Matias Vara <matiasevara@gmail.com>
+// All Rights Reserved
+//
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
+unit Kvm;
 
 interface
 
+uses BaseUnix, Linux;
+
 Type
+  pkvm_user_memory_region = ^kvm_userspace_memory_region;
   kvm_userspace_memory_region = record
   slot: DWORD;
   flags: DWORD;
   guest_phys_addr: QWORD;
   memory_size: QWORD;
-  userspace_addr: QWORD;  
+  userspace_addr: QWORD;
 end;
 
 const
@@ -52,19 +73,19 @@ type
   kvm_run_hw = record
     hardware_exit_reason: QWORD;
   end;
-		
+
   // KVM_EXIT_FAIL_ENTRY
   kvm_run_fail_entry = record
     hardware_entry_failure_reason: QWORD;
 	  cpu: DWORD;
   end;
-		
+
   // KVM_EXIT_EXCEPTION
   kvm_run_ex = record
     exception: DWORD;
 	  error_code: DWORD;
   end;
-		
+
   // KVM_EXIT_IO
   kvm_run_exit_io = record
     direction: Byte;
@@ -73,7 +94,7 @@ type
 	  count: DWORD;
 	  data_offset: QWORD;
   end;
-  
+
   // KVM_EXIT_MMIO
   kvm_run_mmio = record
     phys_addr: QWORD;
@@ -81,16 +102,17 @@ type
 	  len: DWORD;
 	  is_write: Byte;
   end;
-  
+
   // KVM_EXIT_INTERNAL_ERROR
   kvm_run_internal = record
     suberror: DWORD;
 	  ndata: DWORD;
 	  data: array[0..15] of QWORD;
   end;
-  
+
+  PKvmRun = ^kvm_run;
   kvm_run = record
-	  // in 
+	  // in
 	  request_interrupt_window: Byte;
 	  immediate_exit: Byte;
 	  padding1: array[0..5] of Byte;
@@ -123,7 +145,7 @@ type
     padding: Byte;
   end;
 
-  kvm_dtable = record 
+  kvm_dtable = record
     base: QWORD;
     limit: WORD;
     padding: array[0..2] of WORD;
@@ -140,6 +162,7 @@ type
     interrupt_bitmap: array[0..((KVM_NR_INTERRUPTS + 63) div 64)-1] of QWORD;
   end;
 
+  pkvmregs = ^kvm_regs;
   kvm_regs = record
     rax, rbx, rcx, rdx: QWORD;
     rsi, rdi, rsp, rbp: QWORD;
@@ -148,12 +171,45 @@ type
     rip, rflags: QWORD;
   end;
 
+  PVM = ^VM;
+  VM = record
+    // TODO: this can just LongInt
+    vmfd: LongInt;
+    mem: Pointer;
+  end;
 
-procedure setup_longmode(mem: Pointer; sregs: pkvm_sregs);
+  PVCPU = ^VCPU;
+  VCPU = record
+    vm: PVM;
+    vcpufd: LongInt;
+    run: PKvmRun;
+    sregs: kvm_sregs;
+  end;
+
+function KvmInit: Boolean;
+function CreateVM: LongInt;
+function SetUserMemoryRegion(vmfd: LongInt; region: pkvm_user_memory_region): LongInt;
+function CreateVCPU(vmfd: LongInt; vcpu: PVCPU): Boolean;
+function ConfigureSregs(vcpu: PVCPU): Boolean;
+function ConfigureRegs(vcpu: PVCPU;regs: pkvmregs): Boolean;
+function RunVCPU(vcpu: PVCPU; Out Reason: Longint): Boolean;
+
+var
+  kvmfd: LongInt;
 
 implementation
 
-procedure setup_longmode(mem: Pointer; sregs: pkvm_sregs);
+function CreateVM: LongInt;
+begin
+  Result := fpIOCtl(kvmfd, KVM_CREATE_VM, nil);
+end;
+
+function SetUserMemoryRegion(vmfd: LongInt; region: pkvm_user_memory_region): Longint;
+begin
+ Result := fpIOCtl(vmfd, KVM_SET_USER_MEMORY_REGION, region);
+end;
+
+procedure SetupLongMode(mem: Pointer; sregs: pkvm_sregs);
 var
   pml4, pdpt, pd: ^QWORD;
   seg: kvm_segment;
@@ -161,7 +217,7 @@ begin
   pml4 := Pointer(PtrUInt(mem)+$2000);
   pdpt := Pointer(PtrUInt(mem)+$3000);
   pd := Pointer(PtrUInt(mem)+$4000);
-  
+
   pml4[0] := PDE64_PRESENT or PDE64_RW or PDE64_USER or $3000;
   pdpt[0] := PDE64_PRESENT or PDE64_RW or PDE64_USER or $4000;
   pd[0] := PDE64_PRESENT or PDE64_RW or PDE64_USER or PDE64_PS;
@@ -184,7 +240,7 @@ begin
   seg.g := 1;
 
   sregs^.cs := seg;
-  
+
   seg.tp := 3;
   seg.selector := 2 shl 3;
   sregs^.ds := seg;
@@ -193,7 +249,115 @@ begin
   sregs^.ss := seg;
 end;
 
-initialization
+function KvmInit: Boolean;
+var
+  ret: LongInt;
+begin
+  Result := false;
+  kvmfd := fpOpen('/dev/kvm', O_RdWr or O_CLOEXEC);
+  if kvmfd < 0 then
+  begin
+    WriteLn('KvmInit: error!');
+    Exit;
+  end;
+  ret := fpIOCtl(kvmfd, KVM_GET_API_VERSION, nil);
+  if ret = -1 then
+  begin
+    WriteLn('KvmInit: Error at KVM_GET_API_VERSION');
+    Exit;
+  end;
+  if ret <> 12 then
+  begin
+    WriteLn('KvmInit: KVM_GET_API_VERSION ', ret, ', expected 12');
+    Exit;
+  end;
+  Result := True;
+end;
 
+function CreateVCPU(vmfd: LongInt; vcpu: PVCPU): Boolean;
+var
+  vcpufd: LongInt;
+  run: ^kvm_run;
+  mmapsize, ret: LongInt;
+begin
+  Result := false;
+  vcpufd := fpIOCtl(vmfd, KVM_CREATE_VCPU, nil);
+  if vcpufd = -1 then
+  begin
+    WriteLn('CreateVCPU: Error at KVM_CREATE_VCPU');
+    Exit;
+  end;
+  ret := fpIOCtl(kvmfd, KVM_GET_VCPU_MMAP_SIZE, nil);
+  if ret = -1 then
+  begin
+    WriteLn('CreateVCPU: Error at KVM_GET_VCPU_MMAP_SIZE');
+    Exit;
+  end;
+  mmapsize := ret;
+  if mmapsize < sizeof(run^) then
+  begin
+    WriteLn('CreateVCPU: Error at KVM_GET_VCPU_MMAP_SIZE unexpectedly small');
+    Exit;
+  end;
+  run := fpmmap(nil, mmapsize, PROT_READ or PROT_WRITE, MAP_SHARED, vcpufd, 0);
+  if run = nil then
+  begin
+    WriteLn('CreateVCPU: error at mmap run');
+    Exit;
+  end;
+  vcpu^.vcpufd := vcpufd;
+  vcpu^.run := run;
+  Result := true;
+end;
+
+function ConfigureSregs(vcpu: PVCPU): Boolean;
+var
+  ret: LongInt;
+begin
+  Result := false;
+  ret := fpIOCtl(vcpu^.vcpufd, KVM_GET_SREGS, @vcpu^.sregs);
+  if ret = -1 then
+  begin
+    WriteLn('ConfigureSregs: Error at KVM_GET_SREGS');
+    Exit;
+  end;
+  SetupLongmode(vcpu^.vm^.mem, @vcpu^.sregs);
+  ret := fpIOCtl(vcpu^.vcpufd, KVM_SET_SREGS, @vcpu^.sregs);
+  if ret = -1 then
+  begin
+    WriteLn('KVM_SET_SREGS');
+    Exit;
+  end;
+  Result := true;
+end;
+
+function ConfigureRegs(vcpu: PVCPU; regs: pkvmregs): Boolean;
+var
+  ret: LongInt;
+begin
+  Result := False;
+  ret := fpIOCtl(vcpu^.vcpufd, KVM_SET_REGS, regs);
+  if ret = -1 then
+  begin
+    WriteLn('ConfigureRegs: KVM_SET_REGS');
+    Exit;
+  end;
+  Result := True;
+end;
+
+function RunVCPU(vcpu: PVCPU; out Reason: Longint): Boolean;
+var
+  ret: LongInt;
+begin
+  Result := False;
+  ret := fpIOCtl(vcpu^.vcpufd, KVM_RUN_A, nil);
+  If ret = -1 then
+  begin
+    WriteLn('RunVCPU: error');
+    Exit;
+  end;
+  Reason := vcpu^.run^.exit_reason;
+  Result := True;
+end;
 
 end.
