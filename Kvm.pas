@@ -22,6 +22,7 @@ unit Kvm;
 
 interface
 
+{$mode delphi} // required for FPC to understand the Delphi pascal syntax and symbols (ie: Result)
 uses BaseUnix, Linux;
 
 Type
@@ -218,15 +219,15 @@ begin
   pdpt := Pointer(PtrUInt(mem)+$3000);
   pd := Pointer(PtrUInt(mem)+$4000);
 
-  pml4[0] := PDE64_PRESENT or PDE64_RW or PDE64_USER or $3000;
-  pdpt[0] := PDE64_PRESENT or PDE64_RW or PDE64_USER or $4000;
-  pd[0] := PDE64_PRESENT or PDE64_RW or PDE64_USER or PDE64_PS;
+  pml4^ := PDE64_PRESENT or PDE64_RW or PDE64_USER or $3000;
+  pdpt^ := PDE64_PRESENT or PDE64_RW or PDE64_USER or $4000;
+  pd^ := PDE64_PRESENT or PDE64_RW or PDE64_USER or PDE64_PS;
 
   // this supposes that we start at 0
-  sregs^.cr3 := $2000;
-  sregs^.cr4 := CR4_PAE;
-  sregs^.cr0 := CR0_PE or CR0_MP or CR0_ET or CR0_NE or CR0_WP or CR0_AM or CR0_PG;
-  sregs^.efer := EFER_LME or EFER_LMA;
+  sregs.cr3 := $2000;
+  sregs.cr4 := CR4_PAE;
+  sregs.cr0 := CR0_PE or CR0_MP or CR0_ET or CR0_NE or CR0_WP or CR0_AM or CR0_PG;
+  sregs.efer := EFER_LME or EFER_LMA;
 
   seg.base := 0;
   seg.limit := $ffffffff;
@@ -243,10 +244,10 @@ begin
 
   seg.tp := 3;
   seg.selector := 2 shl 3;
-  sregs^.ds := seg;
-  sregs^.fs := seg;
-  sregs^.gs := seg;
-  sregs^.ss := seg;
+  sregs.ds := seg;
+  sregs.fs := seg;
+  sregs.gs := seg;
+  sregs.ss := seg;
 end;
 
 function KvmInit: Boolean;
@@ -305,8 +306,8 @@ begin
     WriteLn('CreateVCPU: error at mmap run');
     Exit;
   end;
-  vcpu^.vcpufd := vcpufd;
-  vcpu^.run := run;
+  vcpu.vcpufd := vcpufd;
+  vcpu.run := run;
   Result := true;
 end;
 
@@ -315,14 +316,14 @@ var
   ret: LongInt;
 begin
   Result := false;
-  ret := fpIOCtl(vcpu^.vcpufd, KVM_GET_SREGS, @vcpu^.sregs);
+  ret := fpIOCtl(vcpu.vcpufd, KVM_GET_SREGS, @vcpu.sregs);
   if ret = -1 then
   begin
     WriteLn('ConfigureSregs: Error at KVM_GET_SREGS');
     Exit;
   end;
-  SetupLongmode(vcpu^.vm^.mem, @vcpu^.sregs);
-  ret := fpIOCtl(vcpu^.vcpufd, KVM_SET_SREGS, @vcpu^.sregs);
+  SetupLongmode(vcpu.vm.mem, @vcpu.sregs);
+  ret := fpIOCtl(vcpu.vcpufd, KVM_SET_SREGS, @vcpu.sregs);
   if ret = -1 then
   begin
     WriteLn('KVM_SET_SREGS');
@@ -336,7 +337,7 @@ var
   ret: LongInt;
 begin
   Result := False;
-  ret := fpIOCtl(vcpu^.vcpufd, KVM_SET_REGS, regs);
+  ret := fpIOCtl(vcpu.vcpufd, KVM_SET_REGS, regs);
   if ret = -1 then
   begin
     WriteLn('ConfigureRegs: KVM_SET_REGS');
@@ -350,13 +351,13 @@ var
   ret: LongInt;
 begin
   Result := False;
-  ret := fpIOCtl(vcpu^.vcpufd, KVM_RUN_A, nil);
+  ret := fpIOCtl(vcpu.vcpufd, KVM_RUN_A, nil);
   If ret = -1 then
   begin
     WriteLn('RunVCPU: error');
     Exit;
   end;
-  Reason := vcpu^.run^.exit_reason;
+  Reason := vcpu.run.exit_reason;
   Result := True;
 end;
 

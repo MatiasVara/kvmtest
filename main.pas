@@ -4,6 +4,7 @@ uses BaseUnix, Linux, Kvm;
 
 {$asmmode intel}
 {$mode delphi} // required for FPC to understand the Delphi pascal syntax and symbols (ie: Result)
+{$MACRO ON}
 const
   GUEST_ADDR_START = 0;
   GUEST_ADDR_MEM_SIZE = $200000;
