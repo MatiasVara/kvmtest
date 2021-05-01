@@ -87,6 +87,7 @@ type
   end;
 
   // KVM_EXIT_IO
+  PKvmRunExitIO = ^kvm_run_exit_io;
   kvm_run_exit_io = record
     direction: Byte;
 	  size: Byte;

@@ -21,7 +21,11 @@
 //
 program main;
 
-uses BaseUnix, Linux, Kvm;
+{$asmmode intel}
+{$mode delphi}
+{$MACRO ON}
+
+uses BaseUnix, Linux, Kvm, sysutils;
 
 const
   GUEST_ADDR_START = 0;
@@ -30,7 +34,6 @@ const
 var
   ret: LongInt;
   filemem, mem: PChar;
-  run: ^kvm_run;
   Buf : Array[1..2048] of byte;
   Readed: LongInt;
   FBinary: File;
@@ -39,6 +42,8 @@ var
   exit_reason: LongInt;
   region: kvm_userspace_memory_region;
   regs: kvm_regs;
+  ioexit: PKvmRunExitIO;
+  value: ^QWORD;
 begin
   If not KvmInit then
   begin
@@ -112,14 +117,16 @@ begin
         WriteLn('KVM_SET_REGS');
         Break;
       end;
-      WriteLn('Halt instruction, rax: ', regs.rax, ', rbx: ', regs.rbx);
+      WriteLn('Halt instruction, rax: 0x', IntToHex(regs.rax, 4), ', rbx: 0x', IntToHex(regs.rbx, 4));
       Break;
     end else if exit_reason = KVM_EXIT_MMIO then
     begin
       continue;
     end else if exit_reason = KVM_EXIT_IO then
     begin
-      WriteLn('IO!');
+      ioexit := PKvmRunExitIO(@guestvcpu.run.padding_exit[0]);
+      value := Pointer(PtrUInt(guestvcpu.run) + ioexit.data_offset);
+      WriteLn('IO: port: 0x', IntToHex(ioexit.port, 4), ', value: 0x', IntToHex(value^, 4));
       continue;
     end else
     begin
