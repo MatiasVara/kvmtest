@@ -1,10 +1,28 @@
+// main.pas
+//
+// This program demostrates the use of the KVM API to create and run a VM.
+//
+// Copyright (c) 2021 Matias Vara <matiasevara@gmail.com>
+// All Rights Reserved
+//
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
 program main;
 
 uses BaseUnix, Linux, Kvm;
 
-{$asmmode intel}
-{$mode delphi} // required for FPC to understand the Delphi pascal syntax and symbols (ie: Result)
-{$MACRO ON}
 const
   GUEST_ADDR_START = 0;
   GUEST_ADDR_MEM_SIZE = $200000;
@@ -22,10 +40,9 @@ var
   region: kvm_userspace_memory_region;
   regs: kvm_regs;
 begin
-
-  // initialize Kvm file descriptor
   If not KvmInit then
   begin
+    WriteLn('Unable to open /dev/kvm');
     Exit;
   end;
   guest.vmfd := CreateVM();
@@ -34,7 +51,6 @@ begin
     WriteLn('Error at CREATE_VM');
     Exit;
   end;
-
   // allocate one aligned page of guest memory to hold the code.
   mem := fpmmap(nil, GUEST_ADDR_MEM_SIZE, PROT_READ or PROT_WRITE, MAP_SHARED or MAP_ANONYMOUS, -1, 0);
   if mem = nil then
@@ -43,7 +59,6 @@ begin
     Exit;
   end;
   guest.mem := mem;
-
   // read binary from file and put it in memory
   Assign(FBinary, Paramstr(1));
   Reset(FBinary, 1);
@@ -54,7 +69,6 @@ begin
     Inc(filemem, Readed);
   Until (Readed = 0);
   Close(FBinary);
-
   // set user memory region
   region.slot := 0;
   region.guest_phys_addr := GUEST_ADDR_START;
@@ -66,15 +80,14 @@ begin
     WriteLn('Error at KVM_SET_USER_MEMORY_REGION');
     Exit;
   end;
-
+  // vm is limited to one vcpu
   guestvcpu.vm := @guest;
-
   if not CreateVCPU(guest.vmfd, @guestvcpu) then
     Exit;
-
+  // configure system registers
   if not ConfigureSregs(@guestvcpu) then
     Exit;
-
+  // configure general purpose registers
   fillChar(pchar(@regs)^, sizeof(regs), 0);
   regs.rip := GUEST_ADDR_START;
   regs.rax := 2;
@@ -83,7 +96,6 @@ begin
   regs.rsp := GUEST_ADDR_MEM_SIZE;
   if not ConfigureRegs(@guestvcpu, @regs) then
     Exit;
-
   while true do
   begin
     if not RunVCPU(@guestvcpu, exit_reason) then

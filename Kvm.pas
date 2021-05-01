@@ -1,5 +1,5 @@
 //
-// This unit contains an API to use KVM API to manipulate VMs.
+// This unit allows to manipulate VMs by using the KVM API.
 //
 // Copyright (c) 2021 Matias Vara <matiasevara@gmail.com>
 // All Rights Reserved
@@ -24,16 +24,6 @@ interface
 
 {$mode delphi} // required for FPC to understand the Delphi pascal syntax and symbols (ie: Result)
 uses BaseUnix, Linux;
-
-Type
-  pkvm_user_memory_region = ^kvm_userspace_memory_region;
-  kvm_userspace_memory_region = record
-  slot: DWORD;
-  flags: DWORD;
-  guest_phys_addr: QWORD;
-  memory_size: QWORD;
-  userspace_addr: QWORD;
-end;
 
 const
   KVM_EXIT_IO_IN = 0;
@@ -70,6 +60,15 @@ const
   CR4_PAE = 1 shl 5;
 
 type
+  pkvm_user_memory_region = ^kvm_userspace_memory_region;
+  kvm_userspace_memory_region = record
+    slot: DWORD;
+    flags: DWORD;
+    guest_phys_addr: QWORD;
+    memory_size: QWORD;
+    userspace_addr: QWORD;
+  end;
+
   // KVM_EXIT_UNKNOWN
   kvm_run_hw = record
     hardware_exit_reason: QWORD;
@@ -114,7 +113,7 @@ type
   PKvmRun = ^kvm_run;
   kvm_run = record
 	  // in
-	  request_interrupt_window: Byte;
+    request_interrupt_window: Byte;
 	  immediate_exit: Byte;
 	  padding1: array[0..5] of Byte;
 
@@ -207,7 +206,7 @@ end;
 
 function SetUserMemoryRegion(vmfd: LongInt; region: pkvm_user_memory_region): Longint;
 begin
- Result := fpIOCtl(vmfd, KVM_SET_USER_MEMORY_REGION, region);
+  Result := fpIOCtl(vmfd, KVM_SET_USER_MEMORY_REGION, region);
 end;
 
 procedure SetupLongMode(mem: Pointer; sregs: pkvm_sregs);
