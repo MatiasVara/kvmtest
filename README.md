@@ -12,7 +12,7 @@ IO: port: 0x0010, value: 0x0004
 HLT!
 Halt instruction, rax: 0x0005, rbx: 0x0002
 ```
-This output corresponds with the following assembly:
+This output corresponds with the following assembly code:
 ```assembly
 start:
   mov rax, 0
