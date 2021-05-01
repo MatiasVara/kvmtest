@@ -31,12 +31,25 @@ const
   GUEST_ADDR_START = 0;
   GUEST_ADDR_MEM_SIZE = $200000;
 
+procedure LoadBinary(filemem: PChar; path: AnsiString);
+var
+  Buf : Array[1..2048] of byte;
+  FBinary: File;
+  Readed: LongInt;
+begin
+  Assign(FBinary, path);
+  Reset(FBinary, 1);
+  Repeat
+    BlockRead (FBinary, Buf, Sizeof(Buf), Readed);
+    move(Buf, filemem^, Readed);
+    Inc(filemem, Readed);
+  Until (Readed = 0);
+  Close(FBinary);
+end;
+
 var
   ret: LongInt;
-  filemem, mem: PChar;
-  Buf : Array[1..2048] of byte;
-  Readed: LongInt;
-  FBinary: File;
+  mem: PChar;
   guest: VM;
   guestVCPU: VCPU;
   exit_reason: LongInt;
@@ -64,16 +77,7 @@ begin
     Exit;
   end;
   guest.mem := mem;
-  // read binary from file and put it in memory
-  Assign(FBinary, Paramstr(1));
-  Reset(FBinary, 1);
-  filemem := mem;
-  Repeat
-    BlockRead (FBinary, Buf, Sizeof(Buf), Readed);
-    move(Buf, filemem^, Readed);
-    Inc(filemem, Readed);
-  Until (Readed = 0);
-  Close(FBinary);
+  LoadBinary(mem, Paramstr(1));
   // set user memory region
   region.slot := 0;
   region.guest_phys_addr := GUEST_ADDR_START;
