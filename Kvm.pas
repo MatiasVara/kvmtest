@@ -194,11 +194,17 @@ function CreateVCPU(vmfd: LongInt; vcpu: PVCPU): Boolean;
 function ConfigureSregs(vcpu: PVCPU): Boolean;
 function ConfigureRegs(vcpu: PVCPU;regs: pkvmregs): Boolean;
 function RunVCPU(vcpu: PVCPU; Out Reason: Longint): Boolean;
+function GetRegisters(vcpu: PVCPU; regs: pkvmregs): LongInt;
 
 var
   kvmfd: LongInt;
 
 implementation
+
+function GetRegisters(vcpu: PVCPU; regs: pkvmregs): LongInt;
+begin
+  Result := fpIOCtl(vcpu.vcpufd, KVM_GET_REGS, regs);
+end;
 
 function CreateVM: LongInt;
 begin

@@ -35,15 +35,15 @@ procedure LoadBinary(filemem: PChar; path: AnsiString);
 var
   Buf : Array[1..2048] of byte;
   FBinary: File;
-  Readed: LongInt;
+  ReadCount: LongInt;
 begin
   Assign(FBinary, path);
   Reset(FBinary, 1);
   Repeat
-    BlockRead (FBinary, Buf, Sizeof(Buf), Readed);
-    move(Buf, filemem^, Readed);
-    Inc(filemem, Readed);
-  Until (Readed = 0);
+    BlockRead (FBinary, Buf, Sizeof(Buf), ReadCount);
+    move(Buf, filemem^, ReadCount);
+    Inc(filemem, ReadCount);
+  Until (ReadCount = 0);
   Close(FBinary);
 end;
 
@@ -115,7 +115,7 @@ begin
     if exit_reason = KVM_EXIT_HLT then
     begin
       WriteLn('HLT!');
-      ret := fpIOCtl(guestvcpu.vcpufd, KVM_GET_REGS, @regs);
+      ret := GetRegisters(@guestvcpu, @regs);
       if ret = -1 then
       begin
         WriteLn('KVM_SET_REGS');

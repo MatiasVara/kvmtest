@@ -1,5 +1,5 @@
 # Kvmtest
-This is a simple example to demostrate the use of KVM API to manipulate VMs from freepascal
+This sample demonstrates KVM API to manage VMs from FreePascal.
 
 # How to build the example
 To build the example, you have just to run `./build.sh`. You are going to get something like:
