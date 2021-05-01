@@ -12,6 +12,17 @@ IO: port: 0x0010, value: 0x0004
 HLT!
 Halt instruction, rax: 0x0005, rbx: 0x0002
 ```
+This output corresponds with the following assembly:
+```assembly
+start:
+  mov rax, 0
+loop:
+  out $10, ax // this triggers a VMEXIT
+  inc ax
+  cmp ax, 5
+  jne loop
+  hlt  // this triggers a VMEXIT
+```
 
 # Bibliography
 https://github.com/soulxu/kvmsample
