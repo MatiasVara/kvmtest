@@ -30,6 +30,11 @@ uses BaseUnix, Linux, Kvm, sysutils;
 const
   GUEST_ADDR_START = 0;
   GUEST_ADDR_MEM_SIZE = $200000;
+  guestinitialregs : kvm_regs = (
+    rsp : GUEST_ADDR_MEM_SIZE;
+    rip : GUEST_ADDR_START;
+    rflags : 2;
+  );
 
 procedure LoadBinary(filemem: PChar; path: AnsiString);
 var
@@ -63,12 +68,14 @@ begin
     WriteLn('Unable to open /dev/kvm');
     Exit;
   end;
+
   guest.vmfd := CreateVM();
   if guest.vmfd = -1 then
   begin
     WriteLn('Error at CREATE_VM');
     Exit;
   end;
+
   // allocate one aligned page of guest memory to hold the code.
   mem := fpmmap(nil, GUEST_ADDR_MEM_SIZE, PROT_READ or PROT_WRITE, MAP_SHARED or MAP_ANONYMOUS, -1, 0);
   if mem = nil then
@@ -77,7 +84,9 @@ begin
     Exit;
   end;
   guest.mem := mem;
+
   LoadBinary(mem, Paramstr(1));
+
   // set user memory region
   region.slot := 0;
   region.guest_phys_addr := GUEST_ADDR_START;
@@ -89,28 +98,26 @@ begin
     WriteLn('Error at KVM_SET_USER_MEMORY_REGION');
     Exit;
   end;
+
   // vm is limited to one vcpu
   guestvcpu.vm := @guest;
   if not CreateVCPU(guest.vmfd, @guestvcpu) then
     Exit;
+
   // configure system registers
   if not ConfigureSregs(@guestvcpu) then
     Exit;
+
   // configure general purpose registers
-  fillChar(pchar(@regs)^, sizeof(regs), 0);
-  regs.rip := GUEST_ADDR_START;
-  regs.rax := 2;
-  regs.rbx := 2;
-  regs.rflags := 2;
-  regs.rsp := GUEST_ADDR_MEM_SIZE;
-  if not ConfigureRegs(@guestvcpu, @regs) then
+  if not ConfigureRegs(@guestvcpu, @guestinitialregs) then
     Exit;
+
   while true do
   begin
     if not RunVCPU(@guestvcpu, exit_reason) then
     begin
       WriteLn('KVM_RUN');
-      Exit;
+      Break;
     end;
     if exit_reason = KVM_EXIT_HLT then
     begin

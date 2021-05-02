@@ -1,5 +1,5 @@
 //
-// This unit allows to manipulate VMs by using the KVM API.
+// This unit allows to manage VMs by using the KVM API.
 //
 // Copyright (c) 2021 Matias Vara <matiasevara@gmail.com>
 // All Rights Reserved
@@ -22,7 +22,7 @@ unit Kvm;
 
 interface
 
-{$mode delphi} // required for FPC to understand the Delphi pascal syntax and symbols (ie: Result)
+{$mode delphi}
 uses BaseUnix, Linux;
 
 const
