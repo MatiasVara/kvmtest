@@ -1,5 +1,8 @@
 # Kvmtest
-This sample demonstrates KVM API to manage VMs from FreePascal.
+This sample demonstrates KVM API to manage VMs from FreePascal. This work has been mainly inspired by the article at [1].
+
+# Requirements
+A Linux host with KVM. Also you need to install freepascal and nasm.
 
 # How to build the example
 To build the example, you have just to run `./build.sh`. You are going to get something like:
@@ -25,12 +28,14 @@ loop:
 ```
 
 # Bibliography
-https://github.com/soulxu/kvmsample
+[1] https://lwn.net/Articles/658511/
 
-https://github.com/dpw/kvm-hello-world/blob/master/kvm-hello-world.c
+[2] https://github.com/soulxu/kvmsample
 
-https://prog.world/kvm-host-in-a-couple-of-lines-of-code/
+[3] https://github.com/dpw/kvm-hello-world/blob/master/kvm-hello-world.c
 
-https://www.freepascal.org/docs-html/rtl/baseunix/fpioctl.html
+[4] https://prog.world/kvm-host-in-a-couple-of-lines-of-code/
 
-https://github.com/torvalds/linux/blob/master/include/uapi/linux/kvm.h
+[5] https://www.freepascal.org/docs-html/rtl/baseunix/fpioctl.html
+
+[6] https://github.com/torvalds/linux/blob/master/include/uapi/linux/kvm.h
